@@ -17,6 +17,7 @@ import argparse
 from logging import getLogger
 from PIL import Image, ImageDraw, ImageFont
 import os
+import sys
 
 # Constants for default configurations
 DEFAULT_INPUT_FILE = "wwfc.png"
@@ -75,9 +76,21 @@ def configure_logging(log_file=None, force_console=False):
     logging.basicConfig(level=logging.DEBUG, handlers=handlers)
     return getLogger(__name__)
 
+# Validate file existence
+def validate_file(file_path, description="file"):
+    """
+    Validates if a file exists.
+
+    :param file_path: Path to the file to validate.
+    :param description: Description of the file (e.g., "Input file").
+    """
+    if not os.path.isfile(file_path):
+        logger.error(f"The specified {description} does not exist: {file_path}")
+        sys.exit(1)
+
 # Function to generate images with text
 def generate_images(
-    base_image_path, output_dir, text_list, font_path=DEFAULT_FONT_PATH,
+    base_image_path, output_dir, teams_list, font_path=DEFAULT_FONT_PATH,
     font_size=DEFAULT_FONT_SIZE, fill_color=DEFAULT_TEXT_COLOUR
 ):
     """
@@ -85,7 +98,7 @@ def generate_images(
 
     :param base_image_path: Path to the base image.
     :param output_dir: Directory to save the generated images.
-    :param text_list: List of strings to overlay on the images.
+    :param teams_list: List of strings to overlay on the images.
     :param font_path: Path to the font file.
     :param font_size: Font size for the text.
     :param fill_color: Colour of the text.
@@ -93,20 +106,28 @@ def generate_images(
     logger.info("Starting image generation process")
 
     try:
+        # Validate the input file
+        validate_file(base_image_path, "input image")
+        validate_file(font_path, "font file")
+
         # Load the base image
         base_image = Image.open(base_image_path)
         image_width, image_height = base_image.size
         logger.debug(f"Base image loaded with size: {image_width}x{image_height}")
 
         # Prepare the font
-        font = ImageFont.truetype(font_path, font_size)
-        logger.debug(f"Font loaded: {font_path} with size {font_size}")
+        try:
+            font = ImageFont.truetype(font_path, font_size)
+            logger.debug(f"Font loaded: {font_path} with size {font_size}")
+        except IOError:
+            logger.error("Failed to load font. Using default font.")
+            font = ImageFont.load_default()
 
         # Ensure the output directory exists
         os.makedirs(output_dir, exist_ok=True)
         logger.debug(f"Output directory ensured: {output_dir}")
 
-        for text in text_list:
+        for text in teams_list:
             logger.info(f"Processing text: {text}")
             # Clean up the string and split it into lines if necessary
             clean_text = text.strip()
@@ -197,23 +218,32 @@ def main():
         "--force_console", action="store_true",
         help="Force logging to console even if a log file is specified"
     )
+    parser.add_argument(
+        "--teams_file", type=str,
+        help="Path to a file containing team names, one per line (optional)."
+    )
 
     args = parser.parse_args()
 
     global logger
     logger = configure_logging(log_file=args.log_file, force_console=args.force_console)
 
-    # Example text list
-    text_list = [
-        "U7 Blue",
-        "U16 Red",
-        "U12 Blue (Mark Bacon)"
-    ]
+    # Load team names
+    if args.teams_file:
+        validate_file(args.teams_file, "teams file")
+        with open(args.teams_file, "r") as f:
+            teams_list = [line.strip() for line in f if line.strip()]
+    else:
+        teams_list = [
+            "U7 Blue",
+            "U16 Red",
+            "U12 Blue (Mark Bacon)"
+        ]
 
     generate_images(
         base_image_path=args.input,
         output_dir=args.output,
-        text_list=text_list,
+        teams_list=teams_list,
         font_path=args.font,
         font_size=args.font_size,
         fill_color=args.fill_color
